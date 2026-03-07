@@ -114,4 +114,30 @@ const addOD = asyncHandler(async (req, res) => {
     }
 });
 
-module.exports = { registerStudent, loginStudent, addOD };
+// @desc    Get student OD status
+// @route   GET /api/auth/student/od-status
+// @access  Private/Student
+const getODStatus = asyncHandler(async (req, res) => {
+    const student = await Student.findById(req.user._id);
+
+    if (student) {
+        const odLimit = student.odLimit || 5;
+        const odUsed = student.odUsed || 0;
+        const extraODApproved = student.extraODApproved || 0;
+        const totalAllowedOD = odLimit + extraODApproved;
+        const remainingOD = totalAllowedOD - odUsed;
+
+        res.json({
+            odLimit,
+            odUsed,
+            extraODApproved,
+            totalAllowedOD,
+            remainingOD
+        });
+    } else {
+        res.status(404);
+        throw new Error('Student not found');
+    }
+});
+
+module.exports = { registerStudent, loginStudent, addOD, getODStatus };

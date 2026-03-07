@@ -4,7 +4,9 @@ const mongoose = require("mongoose");
 const cors = require("cors");
 const studentRoutes = require('./routes/studentRoutes');
 const facultyRoutes = require('./routes/facultyRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 const odRoutes = require('./routes/odRoutes');
+const reportRoutes = require('./routes/reportRoutes');
 const { verifyOD } = require('./controllers/odController');
 const { notFound, errorHandler } = require('./middleware/errorMiddleware');
 
@@ -23,9 +25,11 @@ connectDB();
 // API Routes
 app.use('/api/auth/student', studentRoutes);
 app.use('/api/auth/faculty', facultyRoutes);
+app.use('/api/admin', adminRoutes);
 app.use('/api/od', odRoutes);
+app.use('/api/reports', reportRoutes);
 // Public verification endpoint for Digital OD Pass
-app.get('/verify/:id', verifyOD);
+app.get('/verify-od/:id', verifyOD);
 
 // Health Check / Test Route
 app.get("/health", (req, res) => {

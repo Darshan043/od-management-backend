@@ -40,7 +40,18 @@ const odRequestSchema = new mongoose.Schema({
         faculty: { type: mongoose.Schema.Types.ObjectId, ref: 'Faculty' },
         role: String,
         date: { type: Date, default: Date.now }
-    }]
+    }],
+    report_submitted: { type: Boolean, default: false },
+    report_verified: { type: Boolean, default: false },
+    report_submission_date: { type: Date },
+    report_word_count: { type: Number },
+    report_status: {
+        type: String,
+        enum: ['pending', 'submitted', 'verified', 'rejected'],
+        default: 'pending'
+    },
+    geotag_verified: { type: Boolean, default: false },
+    compliance_block: { type: Boolean, default: false }
 }, { timestamps: true });
 
 module.exports = mongoose.model('ODRequest', odRequestSchema);

@@ -1,5 +1,4 @@
 const mongoose = require('mongoose');
-
 const connectDB = async () => {
     try {
         // Forcing Local MongoDB for stability and speed during testing
