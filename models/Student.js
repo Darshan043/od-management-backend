@@ -3,7 +3,9 @@ const bcrypt = require('bcryptjs');
 
 const studentSchema = new mongoose.Schema({
     regNo: { type: String, required: true, unique: true },
+    roll_number: { type: String }, // Added for QR verification
     name: { type: String, required: true },
+    full_name: { type: String }, // Added for QR verification
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
     department: { type: String, required: true },

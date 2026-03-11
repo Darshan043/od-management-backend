@@ -7,9 +7,12 @@ const odRequestSchema = new mongoose.Schema({
         required: true
     },
     reason: { type: String, required: true },
+    event_name: { type: String }, // Added for QR verification
     proofFile: { type: String }, // URL or filename
     fromDate: { type: Date, required: true },
+    start_date: { type: String }, // Added for QR verification
     toDate: { type: Date, required: true },
+    end_date: { type: String }, // Added for QR verification
     status: {
         type: String,
         enum: [
@@ -21,7 +24,19 @@ const odRequestSchema = new mongoose.Schema({
         ],
         default: 'PENDING'
     },
+    approvalLevel: {
+        type: String,
+        enum: ['faculty', 'coordinator', 'hod'],
+        default: 'faculty'
+    },
+    lastActionTime: {
+        type: Date,
+        default: Date.now
+    },
     remarks: { type: String },
+    faculty_status: { type: String, default: 'PENDING' },
+    coordinator_status: { type: String, default: 'PENDING' },
+    hod_status: { type: String, default: 'PENDING' },
     // Stores URL or encoded payload used in the QR code
     qrCodeData: { type: String },
     // Flag to indicate final approval used for digital pass

@@ -10,12 +10,31 @@ const {
     rejectOD,
     getAnalytics,
     getStudentListWithODStatus,
-    verifyCheckin
+    verifyCheckin,
+    verifyODJson
 } = require('../controllers/odController');
 const { protect, allowStudent, allowFaculty, allowHOD, allowAdmin } = require('../middleware/authMiddleware');
+const multer = require('multer');
+const path = require('path');
+
+// Multer storage for OD proofs
+const storage = multer.diskStorage({
+    destination(req, file, cb) {
+        const dir = 'uploads';
+        if (!require('fs').existsSync(dir)) {
+            require('fs').mkdirSync(dir, { recursive: true });
+        }
+        cb(null, dir);
+    },
+    filename(req, file, cb) {
+        cb(null, `proof-${Date.now()}${path.extname(file.originalname)}`);
+    }
+});
+
+const upload = multer({ storage });
 
 // Student routes
-router.post('/apply', protect, allowStudent, createOD);
+router.post('/apply', protect, allowStudent, upload.single('proofFile'), createOD);
 router.get('/student/:regNo', protect, allowStudent, getStudentODs);
 
 // Faculty/Admin routes
@@ -29,6 +48,10 @@ router.put('/:id/reject', protect, allowFaculty, rejectOD);
 
 // Student location check-in
 router.put('/:id/checkin', protect, allowStudent, verifyCheckin);
+
+// JSON Verification for Scanner (Public or Protected? User said "scanner page", usually protected if staff usage)
+// For now, let's keep it under /api/od/verify/:id 
+router.get('/verify/:id', verifyODJson);
 
 // Admin analytics
 router.get('/analytics', protect, allowAdmin, getAnalytics);

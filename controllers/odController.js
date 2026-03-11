@@ -36,11 +36,16 @@ const createOD = asyncHandler(async (req, res) => {
     const odRequest = await ODRequest.create({
         student: req.user._id,
         reason,
-        proofFile,
+        event_name: reason, // Added for QR verification
+        proofFile: req.file ? req.file.path.replace(/\\/g, '/') : null,
         fromDate,
+        start_date: new Date(fromDate).toLocaleDateString(), // Added for QR verification
         toDate,
+        end_date: new Date(toDate).toLocaleDateString(), // Added for QR verification
         location,
-        status: 'PENDING'
+        status: 'PENDING',
+        approvalLevel: 'faculty',
+        lastActionTime: Date.now()
     });
 
     res.status(201).json(odRequest);
@@ -75,11 +80,11 @@ const getFacultyODs = asyncHandler(async (req, res) => {
     let query = {};
 
     if (role === 'FACULTY') {
-        query = { status: 'PENDING' };
+        query = { approvalLevel: 'faculty', status: 'PENDING' };
     } else if (role === 'COORDINATOR') {
-        query = { status: 'FACULTY_APPROVED' };
+        query = { approvalLevel: 'coordinator', status: { $in: ['PENDING', 'FACULTY_APPROVED'] } };
     } else if (role === 'HOD') {
-        query = { status: 'COORDINATOR_APPROVED' };
+        query = { approvalLevel: 'hod', status: { $in: ['PENDING', 'FACULTY_APPROVED', 'COORDINATOR_APPROVED'] } };
     }
 
     const ods = await ODRequest.find(query)
@@ -113,6 +118,9 @@ const facultyApprove = asyncHandler(async (req, res) => {
     }
 
     od.status = 'FACULTY_APPROVED';
+    od.faculty_status = 'APPROVED'; // Added for QR verification
+    od.approvalLevel = 'coordinator';
+    od.lastActionTime = Date.now();
     od.approvedBy.push({
         faculty: req.user._id,
         role: 'FACULTY'
@@ -137,6 +145,9 @@ const coordinatorApprove = asyncHandler(async (req, res) => {
     }
 
     od.status = 'COORDINATOR_APPROVED';
+    od.coordinator_status = 'APPROVED'; // Added for QR verification
+    od.approvalLevel = 'hod';
+    od.lastActionTime = Date.now();
     od.approvedBy.push({
         faculty: req.user._id,
         role: 'COORDINATOR'
@@ -162,15 +173,24 @@ const finalApproveOD = asyncHandler(async (req, res) => {
     }
 
     od.status = 'HOD_APPROVED';
+    od.hod_status = 'APPROVED'; // Added for QR verification
     od.isFinalApproved = true;
+
+    // Force update student fields just in case
+    const student = await Student.findById(od.student);
+    if (student) {
+        student.full_name = student.name;
+        student.roll_number = student.regNo;
+        await student.save();
+    }
 
     od.approvedBy.push({
         faculty: req.user._id,
         role: 'HOD'
     });
 
-    // QR payload points to production verification endpoint
-    const BASE_URL = process.env.BASE_URL || "https://od-management-backend-1.onrender.com";
+    // QR payload points to local verification endpoint as requested
+    const BASE_URL = process.env.BASE_URL || "http://10.29.205.232:5000";
     const qrData = `${BASE_URL}/verify-od/${od._id}`;
     od.qrCodeData = qrData;
 
@@ -263,237 +283,99 @@ const verifyCheckin = asyncHandler(async (req, res) => {
     });
 });
 
-// @desc    Public verification endpoint for Digital OD Pass QR
-// @route   GET /verify/:id
-const verifyOD = asyncHandler(async (req, res) => {
-    const od = await ODRequest.findById(req.params.id)
-        .populate('student', 'name regNo department year section')
-        .populate('approvedBy.faculty', 'name staffId role');
+// @desc    JSON verification endpoint for QR Scanner App
+// @route   GET /api/od/verify/:id
+const verifyODJson = asyncHandler(async (req, res) => {
+    const id = req.params.id;
 
-    if (!od) {
-        return res.status(404).send(`
-            <html>
-                <head>
-                    <meta name="viewport" content="width=device-width, initial-scale=1">
-                    <style>
-                        body { font-family: -apple-system, system-ui, sans-serif; text-align: center; padding: 50px; background: #f8fafc; }
-                        .card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); max-width: 400px; margin: auto; }
-                        .error-icon { font-size: 48px; margin-bottom: 20px; }
-                        h1 { color: #e11d48; margin-bottom: 10px; font-size: 20px; }
-                        p { color: #64748b; font-size: 14px; }
-                    </style>
-                </head>
-                <body>
-                    <div class="card">
-                        <div class="error-icon">❌</div>
-                        <h1>Invalid OD Pass</h1>
-                        <p>The OD record associated with this QR code could not be found in our database.</p>
-                    </div>
-                </body>
-            </html>
-        `);
+    let od;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+        od = await ODRequest.findById(id)
+            .populate('student', 'name regNo department year section')
+            .populate('approvedBy.faculty', 'name staffId role');
     }
 
-    const isApproved = od.status === 'HOD_APPROVED' || od.isFinalApproved;
-    const hodApproval = od.approvedBy.find(a => a.role === 'HOD');
+    if (!od) {
+        // Fallback to searching by regNo if ID wasn't a valid ObjectId or not found
+        // Note: regNo lookup might return multiple if the student has multiple ODs. 
+        // We'll return the latest one if searching by regNo.
+        const student = await mongoose.model('Student').findOne({ regNo: id });
+        if (student) {
+            od = await ODRequest.findOne({ student: student._id })
+                .sort('-createdAt')
+                .populate('student', 'name regNo department year section')
+                .populate('approvedBy.faculty', 'name staffId role');
+        }
+    }
 
-    const formatDate = (date) => new Date(date).toLocaleDateString('en-GB', {
-        day: '2-digit', month: 'short', year: 'numeric'
+    if (!od) {
+        return res.status(404).json({
+            success: false,
+            message: "Invalid QR Code or OD record not found."
+        });
+    }
+
+    res.json({
+        success: true,
+        data: od
     });
+});
 
-    const formatTime = (date) => new Date(date).toLocaleString('en-GB', {
-        hour: '2-digit', minute: '2-digit', hour12: true
-    });
+// @desc    Public verification endpoint for Digital OD Pass QR
+// @route   GET /verify-od/:id
+const verifyOD = asyncHandler(async (req, res) => {
+    try {
+        const id = req.params.id;
+        const application = await ODRequest.findById(id).populate("student");
 
-    const html = `
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>OD PASS VERIFICATION</title>
-        <style>
-            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
-            :root { 
-                --primary: #0F172A; 
-                --success-bg: #dcfce7;
-                --success-text: #166534;
-                --danger-bg: #fee2e2;
-                --danger-text: #991b1b;
-                --gray-label: #64748b;
-                --gray-value: #1e293b;
-            }
-            body { 
-                font-family: 'Inter', system-ui, sans-serif; 
-                background: #f1f5f9; 
-                margin: 0; 
-                padding: 20px; 
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                min-height: 100vh;
-            }
-            .container { width: 100%; max-width: 450px; }
-            .card { 
-                background: white; 
-                border-radius: 20px; 
-                overflow: hidden; 
-                box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15); 
-                border: 1px solid #e2e8f0; 
-            }
-            .header { 
-                background: var(--primary); 
-                color: white; 
-                padding: 24px; 
-                text-align: center; 
-            }
-            .header h1 { 
-                margin: 0; 
-                font-size: 16px; 
-                font-weight: 800; 
-                letter-spacing: 0.1em; 
-                text-transform: uppercase; 
-            }
-            .status-banner { 
-                padding: 16px; 
-                text-align: center; 
-                font-weight: 800; 
-                font-size: 13px; 
-                text-transform: uppercase;
-                letter-spacing: 0.05em;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                gap: 8px;
-            }
-            .status-approved { 
-                background: var(--success-bg); 
-                color: var(--success-text); 
-                border-bottom: 2px solid #bbf7d0;
-            }
-            .status-invalid { 
-                background: var(--danger-bg); 
-                color: var(--danger-text); 
-                border-bottom: 2px solid #fecaca;
-            }
-            .content { padding: 32px 24px; }
-            .info-item { margin-bottom: 20px; }
-            .info-item:last-child { margin-bottom: 0; }
-            .label { 
-                font-size: 10px; 
-                font-weight: 800; 
-                color: var(--gray-label); 
-                text-transform: uppercase; 
-                letter-spacing: 0.1em; 
-                margin-bottom: 4px; 
-                display: block;
-            }
-            .value { 
-                font-size: 16px; 
-                font-weight: 700; 
-                color: var(--gray-value); 
-                display: block; 
-                line-height: 1.4;
-            }
-            .value.large { font-size: 20px; }
-            .divider { 
-                height: 1px; 
-                background: #f1f5f9; 
-                margin: 20px 0; 
-            }
-            .footer { 
-                text-align: center; 
-                margin-top: 24px; 
-                color: #94a3b8; 
-                font-size: 10px; 
-                font-weight: 600; 
-                text-transform: uppercase;
-                letter-spacing: 0.05em;
-            }
-            .watermark {
-                position: absolute;
-                top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%) rotate(-45deg);
-                font-size: 80px;
-                font-weight: 900;
-                opacity: 0.03;
-                pointer-events: none;
-                white-space: nowrap;
-            }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="card" style="position: relative;">
-                ${isApproved ? '<div class="watermark">APPROVED</div>' : '<div class="watermark" style="color: red;">INVALID</div>'}
-                
-                <div class="header">
-                    <h1>OD Pass Verification</h1>
-                </div>
-                
-                <div class="status-banner ${isApproved ? 'status-approved' : 'status-invalid'}">
-                    ${isApproved ? '✅ VALID OD PASS – APPROVED' : '⚠️ INVALID OR UNAPPROVED OD REQUEST'}
-                </div>
+        if (!application) {
+            return res.send("<h2>Invalid OD Pass</h2>");
+        }
 
-                <div class="content">
-                    <div class="info-item">
-                        <span class="label">Student Name</span>
-                        <span class="value large">${od.student.name}</span>
-                    </div>
+        // Ensure full_name and roll_number are available (fallback to name/regNo)
+        const studentName = application.student.full_name || application.student.name;
+        const rollNumber = application.student.roll_number || application.student.regNo;
 
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-                        <div class="info-item">
-                            <span class="label">Register Number</span>
-                            <span class="value">${od.student.regNo}</span>
-                        </div>
-                        <div class="info-item">
-                            <span class="label">Department</span>
-                            <span class="value">${od.student.department}</span>
-                        </div>
-                    </div>
+        res.send(`
+  <html>
+  <head>
+    <title>OD Verification</title>
+    <style>
+      body{font-family:Arial;padding:40px;background:#f5f5f5}
+      .card{background:white;padding:30px;border-radius:10px;max-width:600px;margin:auto;box-shadow:0 2px 10px rgba(0,0,0,0.1)}
+      h1{color:#2c3e50}
+    </style>
+  </head>
 
-                    <div class="divider"></div>
+  <body>
 
-                    <div class="info-item">
-                        <span class="label">Purpose of OD</span>
-                        <span class="value">${od.reason}</span>
-                    </div>
+  <div class="card">
 
-                    <div class="info-item">
-                        <span class="label">OD Duration</span>
-                        <span class="value">${formatDate(od.fromDate)} to ${formatDate(od.toDate)}</span>
-                    </div>
+  <h1>OD Pass Verification</h1>
 
-                    <div class="divider"></div>
+  <p><b>Student Name:</b> ${studentName}</p>
+  <p><b>Register Number:</b> ${rollNumber}</p>
+  <p><b>Department:</b> ${application.student.department}</p>
+  <p><b>Event Name:</b> ${application.event_name || application.reason}</p>
+  <p><b>OD Start Date:</b> ${application.start_date || application.fromDate.toLocaleDateString()}</p>
+  <p><b>OD End Date:</b> ${application.end_date || application.toDate.toLocaleDateString()}</p>
 
-                    <div class="info-item">
-                        <span class="label">Approved By</span>
-                        <span class="value">${hodApproval ? hodApproval.faculty.name : 'System Administrator'}</span>
-                    </div>
+  <h3>Approval Status</h3>
 
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-                        <div class="info-item">
-                            <span class="label">Staff ID</span>
-                            <span class="value">${hodApproval ? (hodApproval.faculty.staffId || 'N/A') : 'N/A'}</span>
-                        </div>
-                        <div class="info-item">
-                            <span class="label">Approval Time</span>
-                            <span class="value">${hodApproval ? formatTime(hodApproval.date) : formatDate(od.updatedAt)}</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="footer">
-                RIT OD Management System &bull; Digital Verification
-            </div>
-        </div>
-    </body>
-    </html>
-    `;
+  <p><b>Faculty:</b> ${application.faculty_status}</p>
+  <p><b>Coordinator:</b> ${application.coordinator_status}</p>
+  <p><b>HOD:</b> ${application.hod_status}</p>
 
-    res.send(html);
+  <h2 style="color:green">VALID OD PASS</h2>
+
+  </div>
+
+  </body>
+  </html>
+`);
+    } catch (error) {
+        res.send("<h2>Verification Error</h2>");
+    }
 });
 
 module.exports = {
@@ -508,5 +390,6 @@ module.exports = {
     getStudentListWithODStatus,
     verifyCheckin,
     finalApproveOD,
-    verifyOD
+    verifyOD,
+    verifyODJson
 };
