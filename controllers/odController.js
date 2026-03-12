@@ -189,8 +189,8 @@ const finalApproveOD = asyncHandler(async (req, res) => {
         role: 'HOD'
     });
 
-    // QR payload points to local verification endpoint as requested
-    const BASE_URL = process.env.BASE_URL || "http://10.29.205.232:5000";
+    // QR payload points to production verification endpoint as requested
+    const BASE_URL = process.env.BASE_URL || "https://od-management-backend-1.onrender.com";
     const qrData = `${BASE_URL}/verify-od/${od._id}`;
     od.qrCodeData = qrData;
 
@@ -337,41 +337,284 @@ const verifyOD = asyncHandler(async (req, res) => {
         const rollNumber = application.student.roll_number || application.student.regNo;
 
         res.send(`
-  <html>
-  <head>
-    <title>OD Verification</title>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Official OD Verification | RIT</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
-      body{font-family:Arial;padding:40px;background:#f5f5f5}
-      .card{background:white;padding:30px;border-radius:10px;max-width:600px;margin:auto;box-shadow:0 2px 10px rgba(0,0,0,0.1)}
-      h1{color:#2c3e50}
+        :root {
+            --primary: #1e3a8a;
+            --primary-light: #3b82f6;
+            --success: #10b981;
+            --pending: #f59e0b;
+            --danger: #ef4444;
+            --background: #f8fafc;
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+            --white: #ffffff;
+            --card-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 24px 16px;
+            opacity: 0;
+            animation: fadeIn 0.8s ease-out forwards;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 24px;
+            width: 100%;
+            max-width: 450px;
+        }
+
+        .logo {
+            width: 80px;
+            height: auto;
+            margin-bottom: 12px;
+        }
+
+        .college-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--primary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 4px;
+        }
+
+        .portal-title {
+            font-size: 22px;
+            font-weight: 800;
+            color: var(--text-main);
+            margin-bottom: 16px;
+        }
+
+        .divider {
+            height: 2px;
+            width: 40px;
+            background: var(--primary);
+            margin: 0 auto;
+            border-radius: 2px;
+            opacity: 0.3;
+        }
+
+        .verification-card {
+            background: var(--white);
+            border-radius: 24px;
+            width: 100%;
+            max-width: 450px;
+            padding: 32px 24px;
+            box-shadow: var(--card-shadow);
+            border: 1px solid rgba(255, 255, 255, 0.7);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .verification-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 6px;
+            background: var(--primary);
+            opacity: 0.8;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+
+        .info-item.full-width {
+            grid-column: span 2;
+        }
+
+        .label {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 4px;
+            display: block;
+        }
+
+        .value {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--text-main);
+            line-height: 1.4;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 6px 16px;
+            border-radius: 100px;
+            font-size: 13px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            animation: pop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) 0.3s both;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        @keyframes pop {
+            0% { transform: scale(0.8); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        .status-approved {
+            background: #ecfdf5;
+            color: var(--success);
+            border: 1px solid #d1fae5;
+        }
+
+        .status-pending {
+            background: #fffbeb;
+            color: var(--pending);
+            border: 1px solid #fef3c7;
+        }
+
+        .status-rejected {
+            background: #fef2f2;
+            color: var(--danger);
+            border: 1px solid #fee2e2;
+        }
+
+        .verification-indicator {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 32px;
+            padding-top: 24px;
+            border-top: 1px solid #f1f5f9;
+        }
+
+        .check-icon {
+            width: 20px;
+            height: 20px;
+            color: var(--success);
+        }
+
+        .verification-text {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--success);
+        }
+
+        .footer {
+            margin-top: auto;
+            padding: 32px 16px 16px;
+            text-align: center;
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--text-muted);
+            line-height: 1.6;
+        }
+
+        @media (max-width: 380px) {
+            .info-grid {
+                grid-template-columns: 1fr;
+                gap: 16px;
+            }
+            .info-item.mobile-half {
+                grid-column: span 1;
+            }
+        }
     </style>
-  </head>
+</head>
+<body>
+    <header class="header">
+        <img src="https://ritchennai.org/admissions/image/rit-logo-new.png" alt="College Logo" class="logo">
+        <div class="college-name">Rajalakshmi Institute of Technology</div>
+        <h1 class="portal-title">OD Verification Portal</h1>
+        <div class="divider"></div>
+    </header>
 
-  <body>
+    <main class="verification-card">
+        <div class="info-grid">
+            <div class="info-item full-width">
+                <span class="label">Student Name</span>
+                <span class="value" style="font-size: 18px;">${studentName}</span>
+            </div>
 
-  <div class="card">
+            <div class="info-item">
+                <span class="label">Register Number</span>
+                <span class="value">${rollNumber}</span>
+            </div>
 
-  <h1>OD Pass Verification</h1>
+            <div class="info-item">
+                <span class="label">Department</span>
+                <span class="value">${application.student.department || 'N/A'}</span>
+            </div>
 
-  <p><b>Student Name:</b> ${studentName}</p>
-  <p><b>Register Number:</b> ${rollNumber}</p>
-  <p><b>Department:</b> ${application.student.department}</p>
-  <p><b>Event Name:</b> ${application.event_name || application.reason}</p>
-  <p><b>OD Start Date:</b> ${application.start_date || application.fromDate.toLocaleDateString()}</p>
-  <p><b>OD End Date:</b> ${application.end_date || application.toDate.toLocaleDateString()}</p>
+            <div class="info-item full-width">
+                <span class="label">Event Name</span>
+                <span class="value">${application.event_name || application.reason}</span>
+            </div>
 
-  <h3>Approval Status</h3>
+            <div class="info-item">
+                <span class="label">Event Date</span>
+                <span class="value">${application.start_date || new Date(application.fromDate).toLocaleDateString()}</span>
+            </div>
 
-  <p><b>Faculty:</b> ${application.faculty_status}</p>
-  <p><b>Coordinator:</b> ${application.coordinator_status}</p>
-  <p><b>HOD:</b> ${application.hod_status}</p>
+            <div class="info-item">
+                <span class="label">Faculty Approval</span>
+                <span class="value">${application.faculty_status || 'PENDING'}</span>
+            </div>
 
-  <h2 style="color:green">VALID OD PASS</h2>
+            <div class="info-item full-width">
+                <span class="label">OD Status</span>
+                <div class="status-badge ${application.status === 'HOD_APPROVED' ? 'status-approved' : application.status === 'REJECTED' ? 'status-rejected' : 'status-pending'}">
+                    ${application.status === 'HOD_APPROVED' ? '● Verified & Approved' : application.status === 'REJECTED' ? '● Application Rejected' : '● Processing / Pending'}
+                </div>
+            </div>
+        </div>
 
-  </div>
+        <div class="verification-indicator">
+            <svg class="check-icon" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+            </svg>
+            <span class="verification-text">Verified by College OD Management System</span>
+        </div>
+    </main>
 
-  </body>
-  </html>
+    <footer class="footer">
+        Official Verification Page – College OD Management System<br>
+        &copy; ${new Date().getFullYear()} Rajalakshmi Institute of Technology
+    </footer>
+</body>
+</html>
 `);
     } catch (error) {
         res.send("<h2>Verification Error</h2>");
